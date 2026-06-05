@@ -4,14 +4,13 @@ import { getFirestore } from 'firebase/firestore';
 import appletConfig from '../../firebase-applet-config.json';
 
 const customConfig = {
-  apiKey: "AIzaSyBlBURFnqoXb3ZhGms7gDWNp0Nu-P_QSZM",
-  authDomain: "you-love-nta.firebaseapp.com",
-  databaseURL: "https://you-love-nta-default-rtdb.firebaseio.com",
-  projectId: "you-love-nta",
-  storageBucket: "you-love-nta.firebasestorage.app",
-  messagingSenderId: "121180158299",
-  appId: "1:121180158299:web:ccea3fe67bcfff9150827e",
-  measurementId: "G-0NTDSFVKYC"
+  apiKey: "AIzaSyArvnu7ePP9Zv0Jg4g8U4FrCAHuqUga9R4",
+  authDomain: "youlove111.firebaseapp.com",
+  projectId: "youlove111",
+  storageBucket: "youlove111.firebasestorage.app",
+  messagingSenderId: "622471308399",
+  appId: "1:622471308399:web:c7f0440e81ecaa62f0599a",
+  measurementId: "G-5V450TGRWG"
 };
 
 // Determine which config to use dynamically based on environment hostname

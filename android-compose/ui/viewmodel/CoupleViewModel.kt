@@ -6,7 +6,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.youlove.app.data.AppDatabase
 import com.youlove.app.data.CoupleProfile
-import com.youlove.app.data.MenstrualCycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,9 +19,6 @@ class CoupleViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _profileState = MutableStateFlow<CoupleProfile?>(null)
     val profileState: StateFlow<CoupleProfile?> = _profileState.asStateFlow()
-
-    private val _cyclesState = MutableStateFlow<List<MenstrualCycle>>(emptyList())
-    val cyclesState: StateFlow<List<MenstrualCycle>> = _cyclesState.asStateFlow()
 
     private val _isLoadingState = MutableStateFlow(false)
     val isLoadingState: StateFlow<Boolean> = _isLoadingState.asStateFlow()
@@ -62,13 +58,6 @@ class CoupleViewModel(application: Application) : AndroidViewModel(application) 
                     }
                 }
                 _isLoadingState.value = false
-            }
-        }
-
-        // Collect menstrual cycles Flow
-        viewModelScope.launch {
-            coupleDao.getAllCyclesFlow().collectLatest { cycles ->
-                _cyclesState.value = cycles
             }
         }
     }
@@ -149,46 +138,5 @@ class CoupleViewModel(application: Application) : AndroidViewModel(application) 
         _draftBgScale.value = current?.backgroundScale ?: 1.0f
         _draftBgOffsetX.value = current?.backgroundOffsetX ?: 0.0f
         _draftBgOffsetY.value = current?.backgroundOffsetY ?: 0.0f
-    }
-
-    /**
-     * Inserts a new menstrual cycle into Room, automatically calculating
-     * period length (menstrualDays) and cycle length based on prior history.
-     */
-    fun saveMenstrualCycle(startDateStr: String, endDateStr: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val start = java.time.LocalDate.parse(startDateStr)
-            val end = java.time.LocalDate.parse(endDateStr)
-            val menstrualDays = (java.time.temporal.ChronoUnit.DAYS.between(start, end) + 1).toInt()
-            
-            // Get all existing cycles to find the closest previous one
-            val existing = coupleDao.getAllCyclesDirect()
-            val priorCycle = existing
-                .filter { java.time.LocalDate.parse(it.startDate).isBefore(start) }
-                .maxByOrNull { it.startDate }
-                
-            val cycleLength = if (priorCycle != null) {
-                java.time.temporal.ChronoUnit.DAYS.between(java.time.LocalDate.parse(priorCycle.startDate), start).toInt()
-            } else {
-                28 // Default cycle length
-            }
-            
-            val newCycle = MenstrualCycle(
-                startDate = startDateStr,
-                endDate = endDateStr,
-                menstrualDays = menstrualDays,
-                cycleLength = cycleLength
-            )
-            coupleDao.insertCycle(newCycle)
-        }
-    }
-
-    /**
-     * Deletes a menstrual cycle from Room
-     */
-    fun deleteMenstrualCycle(cycle: MenstrualCycle) {
-        viewModelScope.launch(Dispatchers.IO) {
-            coupleDao.deleteCycle(cycle)
-        }
     }
 }
