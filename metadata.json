@@ -1,0 +1,6 @@
+{
+  "name": "You Love",
+  "description": "Lưu giữ kỷ niệm, đếm ngày yêu bên nhau và theo dõi chu kỳ kinh nguyệt dành cho các cặp đôi.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

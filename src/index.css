@@ -1,0 +1,167 @@
+@import "tailwindcss";
+
+:root {
+  /* --- CUSTOM PALETTE SPECIFICATION (LIGHT MODE) --- */
+  --primary: #FF6B8A;
+  --primary-hover: #FF4D6D;
+  --secondary: #FFB3C1;
+  --background: #FFF8FA;
+  --surface: #FFFFFF;
+  --text-primary: #2D3748;
+  --text-secondary: #64748B;
+  --border: #E2E8F0;
+  
+  --success: #22C55E;
+  --warning: #F59E0B;
+  --danger: #EF4444;
+
+  /* WCAG-compliant contrasting tones for Light Mode */
+  --rose-400: #E11D48;
+  --rose-300: #BE185D;
+  --rose-200: #9F1239;
+  --indigo-400: #3B82F6;
+  --pink-400: #DB2777;
+  --pink-450: #9D174D;
+  --indigo-450: #1D4ED8;
+
+  /* Secondary helpers */
+  --surface-hover: #FFF1F3;
+  --background-alt: #FDF2F4;
+  --card-shadow: 0 10px 30px -10px rgba(255, 107, 138, 0.12), 0 1px 3px rgba(255, 107, 138, 0.04);
+}
+
+.dark {
+  /* --- CUSTOM PALETTE SPECIFICATION (DARK MODE) --- */
+  --primary: #FF6B8A;
+  --primary-hover: #FF4D6D;
+  --secondary: #FFB3C1;
+  --background: #14080B;    /* Rose-tinted Charcoal */
+  --surface: #1E0F12;       /* Warm Deep Rose-Grey Surface */
+  --text-primary: #FFF0F3;  /* Soft light bone */
+  --text-secondary: #C8B2B6;/* Slate pinkish-gray subtext */
+  --border: #2D1418;        /* Subtle pink-charcoal border */
+
+  --success: #10B981;
+  --warning: #F59E0B;
+  --danger: #EF4444;
+
+  /* Glowing vibrant tones for Dark Mode */
+  --rose-400: #FB7185;
+  --rose-300: #FDA4AF;
+  --rose-200: #FFE4E6;
+  --indigo-400: #818CF8;
+  --pink-400: #F472B6;
+  --pink-450: #F472B6;
+  --indigo-450: #818CF8;
+
+  /* Secondary helpers */
+  --surface-hover: #261418;
+  --background-alt: #100608;
+  --card-shadow: 0 10px 35px -8px rgba(0, 0, 0, 0.6), 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+@theme {
+  /* Core elements */
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-secondary: var(--secondary);
+  --color-background-app: var(--background);
+  --color-surface: var(--surface);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-border-color: var(--border);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  
+  --color-surface-hover: var(--surface-hover);
+  --color-background-alt: var(--background-alt);
+
+  /* Mapping standard Tailwind slate utilities to keep App.tsx pristine and unified */
+  --color-slate-955: var(--surface);
+  --color-slate-950: var(--surface);
+  --color-slate-900: var(--background);
+  --color-slate-855: var(--background-alt);
+  --color-slate-850: var(--background-alt);
+  --color-slate-805: var(--border);
+  --color-slate-800: var(--border);
+  --color-slate-755: var(--surface-hover);
+  --color-slate-700: var(--border);
+  
+  --color-slate-600: var(--text-secondary);
+  --color-slate-500: var(--text-secondary);
+  --color-slate-450: var(--text-secondary);
+  --color-slate-400: var(--text-secondary);
+  --color-slate-350: var(--text-secondary);
+  --color-slate-300: var(--text-primary);
+  --color-slate-250: var(--text-primary);
+  --color-slate-200: var(--text-primary);
+  --color-slate-100: var(--text-primary);
+  
+  /* Overrides for hardcoded primary tints */
+  --color-rose-500: var(--primary);
+  --color-rose-600: var(--primary-hover);
+  --color-pink-500: var(--secondary);
+
+  /* Overrides for high contrast WCAG standards */
+  --color-rose-400: var(--rose-400);
+  --color-rose-300: var(--rose-300);
+  --color-rose-200: var(--rose-200);
+  --color-indigo-400: var(--indigo-400);
+  --color-pink-400: var(--pink-400);
+  --color-pink-450: var(--pink-450);
+  --color-indigo-450: var(--indigo-450);
+
+  /* Animation profiles for smooth interface experience */
+  --animate-spin-slow: spin 16s linear infinite;
+  --animate-scale-up: scaleUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  --animate-fade-in: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  --animate-shake: shake 0.4s ease-in-out;
+  --animate-heart-beat: heartBeat 1.2s ease-in-out infinite;
+}
+
+@keyframes heartBeat {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.06); }
+}
+
+@keyframes scaleUp {
+  from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+
+@layer base {
+  body {
+    @apply select-none sm:select-text bg-background-app text-text-primary transition-colors duration-300 font-sans;
+  }
+}
+
+/* Custom PWA visual scrollbar components */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--secondary);
+}

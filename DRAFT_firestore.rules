@@ -1,0 +1,38 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net (Default-Deny Catch-All)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Global Helpers
+    function isValidId(id) {
+      return id is string && id.size() <= 64 && id.matches('^LOVE-[A-Z0-9]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidCoupleRoom(data) {
+      return data.updatedAt == request.time
+        && (data.profile == null || data.profile is map)
+        && (data.cycles == null || data.cycles is list)
+        && (data.aiResult == null || data.aiResult is map)
+        && (data.settings == null || data.settings is map);
+    }
+
+    // 2. Couples collection with room sharing model matching the blueprint
+    match /couples/{coupleId} {
+      allow read: if isValidId(coupleId);
+      allow create: if isValidId(coupleId) && isValidCoupleRoom(incoming());
+      allow update: if isValidId(coupleId) && isValidCoupleRoom(incoming());
+      allow delete: if false; // Deleting shared couple space is locked to protect users
+    }
+  }
+}

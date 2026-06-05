@@ -1,0 +1,85 @@
+{
+  "entities": {
+    "CoupleProfile": {
+      "title": "Couple Profile Data",
+      "description": "Details about the couple names, birthdays, avatars, zodiac signs, and love date",
+      "type": "object",
+      "properties": {
+        "id": { "type": "integer" },
+        "maleName": { "type": "string" },
+        "femaleName": { "type": "string" },
+        "maleBirthday": { "type": "string" },
+        "femaleBirthday": { "type": "string" },
+        "maleAvatar": { "type": "string" },
+        "femaleAvatar": { "type": "string" },
+        "maleZodiac": { "type": "string" },
+        "femaleZodiac": { "type": "string" },
+        "loveDate": { "type": "string" },
+        "backgroundImage": { "type": "string" },
+        "maleScale": { "type": "number" },
+        "maleOffsetX": { "type": "number" },
+        "maleOffsetY": { "type": "number" },
+        "femaleScale": { "type": "number" },
+        "femaleOffsetX": { "type": "number" },
+        "femaleOffsetY": { "type": "number" },
+        "bgScale": { "type": "number" },
+        "bgOffsetX": { "type": "number" },
+        "bgOffsetY": { "type": "number" },
+        "bgRotation": { "type": "number" }
+      },
+      "required": ["maleName", "femaleName", "loveDate"]
+    },
+    "MenstrualCycle": {
+      "title": "Menstrual Cycle Record",
+      "description": "Information about a specific menstrual cycle tracked by the female partner",
+      "type": "object",
+      "properties": {
+        "id": { "type": "integer" },
+        "startDate": { "type": "string" },
+        "cycleLength": { "type": "integer" },
+        "periodLength": { "type": "integer" },
+        "lhTestResult": { "type": "string" },
+        "bbt": { "type": "number" },
+        "cervicalMucus": { "type": "string" }
+      },
+      "required": ["startDate", "cycleLength", "periodLength"]
+    },
+    "GeminiAnalysisResult": {
+      "title": "AI Analysis Result",
+      "description": "The latest calculated reports, outliers and predictions produced by the Gemini AI",
+      "type": "object",
+      "properties": {
+        "average_cycle_length": { "type": "integer" },
+        "median_cycle_length": { "type": "integer" },
+        "cycle_stability": { "type": "string" },
+        "confidence_score": { "type": "integer" },
+        "next_period_date": { "type": "string" },
+        "prediction_range": { "type": "string" },
+        "estimated_ovulation_date": { "type": "string" },
+        "fertility_window": { "type": "string" },
+        "outliers": { "type": "array" },
+        "low_fertility_days": { "type": "string" },
+        "reasoning": { "type": "string" }
+      }
+    },
+    "CoupleRoom": {
+      "title": "Couple Shared Room",
+      "description": "Shared room representation that hosts profiles, cycle logs, predictions, and configurations.",
+      "type": "object",
+      "properties": {
+        "profile": { "type": "object", "$ref": "CoupleProfile" },
+        "cycles": { "type": "array" },
+        "aiResult": { "type": "object", "$ref": "GeminiAnalysisResult" },
+        "settings": { "type": "object" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["updatedAt"]
+    }
+  },
+  "firestore": {
+    "couples/{coupleId}": {
+      "schema": "CoupleRoom",
+      "description": "Relational sharing datastore indexed by a random invitation ID."
+    }
+  }
+}
