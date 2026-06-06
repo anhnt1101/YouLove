@@ -15,6 +15,7 @@ import {
   Smile,
   AlertCircle,
   TrendingUp,
+  BarChart3,
   Shield,
   Loader2,
   Copy,
@@ -168,7 +169,7 @@ export default function App() {
     initialOffsetY?: number;
   } | null>(null);
 
-  const handleSaveGestureCorrection = (scale: number, offsetX: number, offsetY: number) => {
+  const handleSaveGestureCorrection = (scale: number, offsetX: number, offsetY: number, croppedImageUrl?: string) => {
     if (!activeGestureEditor || !editProfileDraft) return;
     
     setEditProfileDraft(prev => {
@@ -176,7 +177,7 @@ export default function App() {
       if (activeGestureEditor.type === 'avatar_male') {
         return {
           ...prev,
-          maleAvatar: activeGestureEditor.imageUrl,
+          maleAvatar: croppedImageUrl || activeGestureEditor.imageUrl,
           maleScale: scale,
           maleOffsetX: offsetX,
           maleOffsetY: offsetY
@@ -184,7 +185,7 @@ export default function App() {
       } else if (activeGestureEditor.type === 'avatar_female') {
         return {
           ...prev,
-          femaleAvatar: activeGestureEditor.imageUrl,
+          femaleAvatar: croppedImageUrl || activeGestureEditor.imageUrl,
           femaleScale: scale,
           femaleOffsetX: offsetX,
           femaleOffsetY: offsetY
@@ -213,10 +214,13 @@ export default function App() {
   // Cycle Logging fields
   const [logId, setLogId] = useState<number | null>(null);
   const [logStartDate, setLogStartDate] = useState('');
+  const [logEndDate, setLogEndDate] = useState('');
+  const [pickerMonth, setPickerMonth] = useState<Date>(() => new Date());
   const [logCycleLength, setLogCycleLength] = useState(28);
   const [logPeriodLength, setLogPeriodLength] = useState(5);
   const [logLhTest, setLogLhTest] = useState('Không có');
-  const [logBbt, setLogBbt] = useState<number | string>('36.6');
+  const [logLhPositiveDate, setLogLhPositiveDate] = useState('');
+  const [logBbt, setLogBbt] = useState<number | string>('');
   const [logMucus, setLogMucus] = useState('Bình thường');
   const [logError, setLogError] = useState<string | null>(null);
 
@@ -502,6 +506,27 @@ export default function App() {
     };
   }, [cycles, cycleMap]);
 
+  // Dynamic current cycle day count
+  const currentCycleDay = useMemo(() => {
+    if (cycles.length === 0) return null;
+    const sorted = [...cycles].sort((a, b) => a.startDate.localeCompare(b.startDate));
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayStr = CoupleUtils.formatDate(today);
+
+    // Find the latest cycle that starts before or on today
+    const currentCycle = sorted.filter(c => c.startDate <= todayStr).pop();
+    if (!currentCycle) return null;
+
+    const start = CoupleUtils.parseDate(currentCycle.startDate);
+    if (!start) return null;
+    start.setHours(0, 0, 0, 0);
+
+    const diffTime = today.getTime() - start.getTime();
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays + 1; // 1-indexed
+  }, [cycles]);
+
   // Computes the timeline milestones chronologically
   const calculatedMilestones = useMemo(() => {
     const list: Array<{ title: string; date: Date; daysRemaining: number; dateStr: string }> = [];
@@ -642,24 +667,110 @@ export default function App() {
   // -------------------------------------------------------------
   // MENSTRUAL ACTIONS
   // -------------------------------------------------------------
+  const addDaysLocal = (dateStr: string, days: number): string => {
+    const parsed = CoupleUtils.parseDate(dateStr);
+    if (!parsed) return dateStr;
+    parsed.setDate(parsed.getDate() + days);
+    return CoupleUtils.formatDate(parsed);
+  };
+
+  const daysBetweenLocal = (startStr: string, endStr: string): number => {
+    const start = CoupleUtils.parseDate(startStr);
+    const end = CoupleUtils.parseDate(endStr);
+    if (!start || !end) return 0;
+    const sDate = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    const eDate = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+    const diffTime = eDate.getTime() - sDate.getTime();
+    return Math.round(diffTime / (1000 * 60 * 60 * 24));
+  };
+
+  const calculateCycleLengthForDate = (startDateStr: string, currentLogId: number | null): number => {
+    const otherCycles = cycles.filter(c => c.id !== currentLogId);
+    if (otherCycles.length === 0) return 28;
+
+    const sorted = [...otherCycles].sort((a, b) => a.startDate.localeCompare(b.startDate));
+
+    // Find closest cycle starting chronologically BEFORE the current selection
+    let prevCycle: MenstrualCycle | null = null;
+    for (let i = sorted.length - 1; i >= 0; i--) {
+      if (sorted[i].startDate < startDateStr) {
+        prevCycle = sorted[i];
+        break;
+      }
+    }
+
+    if (prevCycle) {
+      const prevDate = CoupleUtils.parseDate(prevCycle.startDate);
+      const currDate = CoupleUtils.parseDate(startDateStr);
+      if (prevDate && currDate) {
+        const diffTime = currDate.getTime() - prevDate.getTime();
+        const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+        if (diffDays > 0) return diffDays;
+      }
+    }
+
+    // Find closest cycle starting chronologically AFTER the current selection if no previous one exists
+    let nextCycle: MenstrualCycle | null = null;
+    for (let i = 0; i < sorted.length; i++) {
+      if (sorted[i].startDate > startDateStr) {
+        nextCycle = sorted[i];
+        break;
+      }
+    }
+
+    if (nextCycle) {
+      const nextDate = CoupleUtils.parseDate(nextCycle.startDate);
+      const currDate = CoupleUtils.parseDate(startDateStr);
+      if (nextDate && currDate) {
+        const diffTime = nextDate.getTime() - currDate.getTime();
+        const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+        if (diffDays > 0) return diffDays;
+      }
+    }
+
+    const averageCycle = MenstrualUtils.calculateAverageCycleLength(cycles);
+    return averageCycle || 28;
+  };
+
+  const handlePrevMonth = () => {
+    const p = new Date(pickerMonth);
+    p.setMonth(p.getMonth() - 1);
+    setPickerMonth(p);
+  };
+
+  const handleNextMonth = () => {
+    const n = new Date(pickerMonth);
+    n.setMonth(n.getMonth() + 1);
+    setPickerMonth(n);
+  };
+
   const openLogCycle = (existing?: MenstrualCycle) => {
     if (existing) {
       setLogId(existing.id || null);
       setLogStartDate(existing.startDate);
+      const endD = addDaysLocal(existing.startDate, existing.periodLength - 1);
+      setLogEndDate(endD);
       setLogCycleLength(existing.cycleLength);
       setLogPeriodLength(existing.periodLength);
       setLogLhTest(existing.lhTestResult || 'Không có');
-      setLogBbt(existing.bbt || '36.6');
+      setLogLhPositiveDate(existing.lhPositiveDate || '');
+      setLogBbt(existing.bbt ? String(existing.bbt) : '');
       setLogMucus(existing.cervicalMucus || 'Bình thường');
+      setPickerMonth(CoupleUtils.parseDate(existing.startDate) || new Date());
     } else {
       setLogId(null);
-      // Auto prefill today
-      setLogStartDate(CoupleUtils.formatDate(new Date()));
-      setLogCycleLength(28);
+      const todayStr = CoupleUtils.formatDate(new Date());
+      setLogStartDate(todayStr);
+      const endD = addDaysLocal(todayStr, 4);
+      setLogEndDate(endD);
+      const calculatedCycle = calculateCycleLengthForDate(todayStr, null);
+      setLogCycleLength(calculatedCycle);
       setLogPeriodLength(5);
       setLogLhTest('Không có');
-      setLogBbt('36.6');
+      setLogLhPositiveDate('');
+      setLogBbt('');
       setLogMucus('Bình thường');
+      setPickerMonth(new Date());
     }
     setLogError(null);
     setShowLogCycleDialog(true);
@@ -679,12 +790,12 @@ export default function App() {
       setLogError("Không cho phép ghi nhận ngày tương lai.");
       return;
     }
-    if (logCycleLength < 21 || logCycleLength > 40) {
-      setLogError("Độ chu kỳ bình thường phải dao động từ 21 tới 40 ngày.");
+    if (logCycleLength < 10 || logCycleLength > 90) {
+      setLogError("Chu kỳ kinh nguyệt an toàn phải dao động từ 10 tới 90 ngày.");
       return;
     }
-    if (logPeriodLength < 2 || logPeriodLength > 10) {
-      setLogError("Kỳ hành kinh lý tưởng nên nằm trong tầm 2 đến 10 ngày.");
+    if (logPeriodLength < 1 || logPeriodLength > 15) {
+      setLogError("Số ngày hành kinh lý tưởng nên nằm trong tầm 1 đến 15 ngày.");
       return;
     }
 
@@ -694,7 +805,8 @@ export default function App() {
       cycleLength: logCycleLength,
       periodLength: logPeriodLength,
       lhTestResult: logLhTest,
-      bbt: isNaN(Number(logBbt)) ? null : Number(logBbt),
+      lhPositiveDate: logLhTest === 'Peak' ? (logLhPositiveDate || logStartDate) : null,
+      bbt: (logBbt === '' || isNaN(Number(logBbt))) ? null : Number(logBbt),
       cervicalMucus: logMucus
     };
 
@@ -822,30 +934,153 @@ export default function App() {
     return grid;
   }, [calendarDate]);
 
+  // Calendar Days for the log-form month picker range selection
+  const pickerMonthDays = useMemo(() => {
+    const year = pickerMonth.getFullYear();
+    const month = pickerMonth.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const startOffset = firstDay.getDay(); // 0 is Sun, 1 is Mon...
+
+    const totalDays = new Date(year, month + 1, 0).getDate();
+    const prevTotalDays = new Date(year, month, 0).getDate();
+
+    const grid: Array<{ dateStr: string; dayNum: number; isCurrentMonth: boolean }> = [];
+
+    // Pre-pad with previous month
+    for (let i = startOffset - 1; i >= 0; i--) {
+      const dNum = prevTotalDays - i;
+      const d = new Date(year, month - 1, dNum);
+      grid.push({
+        dateStr: CoupleUtils.formatDate(d),
+        dayNum: dNum,
+        isCurrentMonth: false
+      });
+    }
+
+    // Fill current month
+    for (let i = 1; i <= totalDays; i++) {
+      const d = new Date(year, month, i);
+      grid.push({
+        dateStr: CoupleUtils.formatDate(d),
+        dayNum: i,
+        isCurrentMonth: true
+      });
+    }
+
+    // Post-pad to make multiples of 7 grids
+    const totalFilled = grid.length;
+    const remaining = 42 - totalFilled;
+    for (let i = 1; i <= remaining; i++) {
+      const d = new Date(year, month + 1, i);
+      grid.push({
+        dateStr: CoupleUtils.formatDate(d),
+        dayNum: i,
+        isCurrentMonth: false
+      });
+    }
+
+    return grid;
+  }, [pickerMonth]);
+
+  const isDateInRange = (dateStr: string): boolean => {
+    if (!logStartDate) return false;
+    if (!logEndDate) {
+      return dateStr === logStartDate;
+    }
+    return dateStr >= logStartDate && dateStr <= logEndDate;
+  };
+
+  const isDateStart = (dateStr: string): boolean => dateStr === logStartDate;
+  const isDateEnd = (dateStr: string): boolean => dateStr === logEndDate;
+
+  const handlePickerDaySelect = (cellDate: string) => {
+    if (!logStartDate || logEndDate) {
+      setLogStartDate(cellDate);
+      setLogEndDate('');
+      const calculatedCycle = calculateCycleLengthForDate(cellDate, logId);
+      setLogCycleLength(calculatedCycle);
+      setLogPeriodLength(1);
+    } else {
+      if (cellDate < logStartDate) {
+        setLogStartDate(cellDate);
+        setLogEndDate('');
+        const calculatedCycle = calculateCycleLengthForDate(cellDate, logId);
+        setLogCycleLength(calculatedCycle);
+        setLogPeriodLength(1);
+      } else {
+        setLogEndDate(cellDate);
+        const days = daysBetweenLocal(logStartDate, cellDate) + 1;
+        setLogPeriodLength(days);
+      }
+    }
+  };
+
+  const cervicalMucusNames: Record<string, string> = {
+    'dry': 'Khô ráo (Dry)',
+    'sticky': 'Dai dính (Sticky)',
+    'creamy': 'Trắng đục dẻo (Creamy)',
+    'watery': 'Loãng ướt (Watery)',
+    'eggwhite': 'Lòng trắng trứng (Eggwhite ✨)',
+    'Bình thường': 'Bình thường'
+  };
+
+  // Helper to locate active cycle segment containing any date
+  const findCycleForDate = (dateStr: string, allCycles: MenstrualCycle[]): MenstrualCycle | null => {
+    if (allCycles.length === 0) return null;
+    const sorted = [...allCycles].sort((a, b) => a.startDate.localeCompare(b.startDate));
+    for (let i = 0; i < sorted.length; i++) {
+      const start = sorted[i].startDate;
+      const nextStart = (i < sorted.length - 1) ? sorted[i + 1].startDate : null;
+      if (dateStr >= start && (!nextStart || dateStr < nextStart)) {
+        return sorted[i];
+      }
+    }
+    // Fallback if before any, search closest
+    return sorted[0];
+  };
+
   // Color mapper helper based on status codes
   const getDayStatusClass = (status: DayStatus, isToday: boolean, isSelected: boolean) => {
     let classes = 'transition-transform duration-200 cursor-pointer hover:scale-105 select-none ';
 
     if (isSelected) {
-      classes += 'ring-2 ring-indigo-400 ring-offset-2 ring-offset-white scale-110 ';
+      if (isToday) {
+        classes += 'ring-4 ring-yellow-400 ring-offset-2 ring-offset-white scale-110 ';
+      } else {
+        classes += 'ring-2 ring-indigo-400 ring-offset-2 ring-offset-white scale-110 ';
+      }
     }
 
-    if (status === 'PERIOD') {
-      classes += 'bg-red-500 text-white shadow-[0_4px_12px_rgba(239,68,68,0.2)] font-bold';
-    } else if (status === 'UPCOMING') {
-      classes += 'bg-rose-100/90 text-rose-700 border border-dashed border-rose-300';
-    } else if (status === 'FERTILE') {
-      classes += 'bg-indigo-100 text-indigo-800 font-medium pulse-fertile border border-indigo-200';
-    } else if (status === 'OVULATION') {
-      classes += 'bg-purple-150 text-purple-800 font-bold ring-2 ring-purple-205';
-    } else if (status === 'SAFE') {
-      classes += 'bg-emerald-100 text-emerald-800 border border-emerald-200';
+    if (isToday) {
+      // Current day always has solid yellow background (nền màu vàng), and status styles are integrated via distinct text and border styling
+      if (status === 'PERIOD') {
+        classes += 'bg-yellow-400 text-red-600 font-extrabold border-2 border-red-500 shadow-[0_2px_8px_rgba(239,68,68,0.35)]';
+      } else if (status === 'UPCOMING') {
+        classes += 'bg-yellow-400 text-rose-700 font-bold border-2 border-dashed border-rose-400';
+      } else if (status === 'FERTILE') {
+        classes += 'bg-yellow-400 text-indigo-800 font-black border-2 border-indigo-400 shadow-[0_2px_8px_rgba(99,102,241,0.35)]';
+      } else if (status === 'OVULATION') {
+        classes += 'bg-yellow-400 text-purple-900 font-black border-2 border-purple-500 ring-2 ring-purple-300 shadow-[0_2px_8px_rgba(168,85,247,0.35)]';
+      } else if (status === 'SAFE') {
+        classes += 'bg-yellow-400 text-emerald-800 font-bold border-2 border-emerald-500 shadow-[0_2px_8px_rgba(16,185,129,0.35)]';
+      } else {
+        classes += 'bg-yellow-400 text-yellow-950 font-black border-2 border-yellow-500 shadow-[0_2px_8px_rgba(234,179,8,0.5)] hover:bg-yellow-500';
+      }
     } else {
-      classes += 'bg-white border border-pink-100/50 text-text-primary hover:bg-surface-hover';
-    }
-
-    if (isToday && status !== 'PERIOD') {
-      classes += ' ring-2 ring-primary ring-offset-1';
+      // Normal state classes when not today
+      if (status === 'PERIOD') {
+        classes += 'bg-red-500 text-white shadow-[0_4px_12px_rgba(239,68,68,0.2)] font-bold';
+      } else if (status === 'UPCOMING') {
+        classes += 'bg-rose-100/90 text-rose-700 border border-dashed border-rose-300';
+      } else if (status === 'FERTILE') {
+        classes += 'bg-indigo-100 text-indigo-800 font-medium pulse-fertile border border-indigo-200';
+      } else if (status === 'OVULATION') {
+        classes += 'bg-purple-150 text-purple-800 font-bold ring-2 ring-purple-205';
+      } else if (status === 'SAFE') {
+        classes += 'bg-emerald-100 text-emerald-800 border border-emerald-200';
+      } else {
+        classes += 'bg-white border border-pink-100/50 text-text-primary hover:bg-surface-hover';
+      }
     }
 
     return classes;
@@ -862,6 +1097,93 @@ export default function App() {
       log
     };
   }, [selectedCalendarDate, cycleMap, cycles]);
+
+  // Dynamic fertility evaluation
+  const fertilityEvaluation = useMemo(() => {
+    if (!selectedCalendarDate) return null;
+    
+    // Find the cycle containing this date
+    const activeCycle = findCycleForDate(selectedCalendarDate, cycles);
+    const mucus = activeCycle?.cervicalMucus;
+    const status = cycleMap[selectedCalendarDate] || 'NONE';
+    
+    // Determine base fertility description from the day status
+    let baseLevel = 'Thấp';
+    let baseColor = 'text-green-600 font-extrabold';
+    let reason = 'Hôm nay là ngày an toàn, khả năng thụ thai thấp.';
+    
+    if (status === 'PERIOD') {
+      baseLevel = 'Rất thấp';
+      baseColor = 'text-gray-500 font-extrabold';
+      reason = 'Đang trong kỳ kinh nguyệt, khả năng thụ thai rất thấp.';
+    } else if (status === 'UPCOMING') {
+      baseLevel = 'Thấp';
+      baseColor = 'text-gray-500 font-bold';
+      reason = 'Ngày dự kiến hành kinh gần kề, khả năng thụ thai thấp.';
+    } else if (status === 'FERTILE') {
+      baseLevel = 'Cao';
+      baseColor = 'text-indigo-600 font-extrabold animate-pulse';
+      reason = 'Nằm trong cửa số thụ thai của chu kỳ.';
+    } else if (status === 'OVULATION') {
+      baseLevel = 'Rất cao';
+      baseColor = 'text-purple-700 font-black animate-pulse';
+      reason = 'Ngày rụng trứng theo lý thuyết, khả năng thụ thai đạt đỉnh!';
+    }
+    
+    // Adjust evaluation by cervical mucus
+    let modifiedLevel = baseLevel;
+    let modifiedColor = baseColor;
+    let confidenceText = '';
+    
+    if (mucus && mucus !== 'Không có' && mucus !== 'Bình thường') {
+      if (mucus === 'dry') {
+        modifiedLevel = 'Thấp';
+        modifiedColor = 'text-green-600 font-bold';
+        reason = 'Dịch tử cung khô ráo (dry), khả năng thụ thai thấp.';
+      } else if (mucus === 'sticky') {
+        modifiedLevel = 'Thấp';
+        modifiedColor = 'text-green-600 font-bold';
+        reason = 'Dịch tử cung dai dính (sticky), khả năng thụ thai thấp.';
+      } else if (mucus === 'creamy') {
+        modifiedLevel = 'Bắt đầu tăng';
+        modifiedColor = 'text-amber-500 font-extrabold';
+        reason = 'Dịch tử cung trắng đục dẻo (creamy), khả năng thụ thai bắt đầu tăng.';
+      } else if (mucus === 'watery') {
+        modifiedLevel = 'Cao';
+        modifiedColor = 'text-indigo-600 font-black animate-pulse';
+        reason = 'Dịch tử cung loãng ướt (watery), tinh trùng di chuyển tốt, khả năng thụ thai cao.';
+      } else if (mucus === 'eggwhite') {
+        modifiedLevel = 'Rất cao 🔥';
+        modifiedColor = 'text-rose-500 font-black animate-pulse';
+        reason = 'Dịch tử cung dạng lòng trắng trứng dai trong (eggwhite), điều kiện thuận lợi nhất để thụ thai!';
+        if (status === 'FERTILE' || status === 'OVULATION') {
+          confidenceText = 'Độ tin cậy dự đoán: Rất cao ✨ (Cả lý thuyết chu kỳ lẫn thể trạng sinh học trùng khớp)';
+        }
+      }
+    }
+    
+    // If we have LH peak, we can also add a notice
+    let lhNotice = '';
+    if (activeCycle?.lhTestResult === 'Peak') {
+      lhNotice = 'Thông báo rụng trứng LH đạt đỉnh (Peak), củng cố mạnh mẽ độ chính xác dự đoán ngày rụng quả.';
+    }
+    
+    // If we have BBT, we can check it
+    let bbtNotice = '';
+    if (activeCycle?.bbt) {
+      bbtNotice = `Nhiệt độ BBT đo được: ${activeCycle.bbt}°C. BBT tăng nhẹ sau rụng trứng giúp theo dõi thực tế tự nhiên thành công.`;
+    }
+
+    return {
+      level: modifiedLevel,
+      color: modifiedColor,
+      reason,
+      confidenceText,
+      lhNotice,
+      bbtNotice,
+      mucus
+    };
+  }, [selectedCalendarDate, cycles, cycleMap]);
 
   return (
     <div id="app-container" className="flex-1 flex flex-col bg-background-app overflow-x-hidden min-h-screen text-text-primary">
@@ -1318,34 +1640,49 @@ export default function App() {
         {coupleId && activeTab === 'menstrual' && (
           <div id="menstrual-tab-content" className="space-y-6 animate-fade-in animate-duration-300">
 
-            {/* HERO WHEEL STATUS INDICATOR */}
-            <div className={`border p-6 rounded-3xl ${currentCycleStatus.color} transition-all duration-350 shadow-[0_4px_20px_rgba(255,107,138,0.05)] flex flex-col md:flex-row items-center gap-6 justify-between select-none`}>
-              <div className="text-center md:text-left space-y-1">
-                <span className="text-[10px] uppercase font-black bg-pink-500/10 text-primary-hover py-1 px-3.5 rounded-full tracking-wide">Trạng Thái Sức Khỏe</span>
-                <h2 className="text-2xl font-black mt-1.5">{currentCycleStatus.title}</h2>
-                <p className="text-xs opacity-90 font-medium">{currentCycleStatus.description}</p>
+            {/* HERO STATUS INDICATOR - TRẠNG THÁI SỨC KHỎE */}
+            <div className={`border p-8 rounded-3xl ${currentCycleStatus.color} transition-all duration-350 shadow-[0_4px_22px_rgba(255,107,138,0.06)] flex flex-col items-center justify-center text-center select-none w-full space-y-5 animate-fade-in`}>
+              {/* TRẠNG THÁI HOẠT ĐỘNG */}
+              <div>
+                <span className="text-[10px] uppercase font-black bg-white/80 text-primary-hover py-1 px-4 rounded-full tracking-widest border border-pink-200/30 shadow-xs">
+                  TRẠNG THÁI HOẠT ĐỘNG
+                </span>
               </div>
 
-              {/* Stats circle detail */}
-              <div className="flex gap-4 bg-white/80 border border-pink-100/80 rounded-2xl py-3 px-4 w-full md:w-auto justify-around shrink-0 text-text-primary shadow-sm">
-                <div className="text-center min-w-[70px]">
-                  <span className="text-text-secondary text-[10px] uppercase font-bold block">Chu Kỳ TB</span>
-                  <span className="text-xl font-black text-rose-500">{menstrualStats.averageCycle} ngày</span>
-                </div>
-                <div className="border-r border-pink-100 my-1"></div>
-                <div className="text-center min-w-[70px]">
-                  <span className="text-text-secondary text-[10px] uppercase font-bold block">Ngắn Nhất</span>
-                  <span className="text-xl font-black text-text-primary">
-                    {menstrualStats.minCycle ? `${menstrualStats.minCycle} ngày` : '--'}
+              {/* Ngày hôm nay & số ngày */}
+              <div className="flex flex-col items-center space-y-1">
+                <span className="text-text-secondary text-xs font-black uppercase tracking-widest block opacity-75">
+                  Ngày hôm nay
+                </span>
+                <span className="text-6xl sm:text-7xl font-sans font-black leading-none tracking-tighter block my-1">
+                  {String(new Date().getDate()).padStart(2, '0')}
+                </span>
+                <span className="text-[11px] font-bold text-text-secondary opacity-80 mt-0.5">
+                  Thứ {new Date().getDay() === 0 ? 'Chủ Nhật' : new Date().getDay() + 1}, ngày {CoupleUtils.formatDisplayDate(CoupleUtils.formatDate(new Date()))}
+                </span>
+              </div>
+
+              {/* Tên trạng thái và Khuyến nghị */}
+              <div className="space-y-1.5 max-w-md mx-auto">
+                <h4 className="text-xl sm:text-2xl font-black text-text-primary leading-tight flex items-center justify-center gap-2">
+                  <span>
+                    {currentCycleStatus.title.includes('kỳ kinh') || currentCycleStatus.title.includes('kinh nguyệt') ? '🩸' : 
+                     currentCycleStatus.title.includes('rụng trứng') ? '✨' : 
+                     currentCycleStatus.title.includes('thụ thai') ? '🕯️' : 
+                     currentCycleStatus.title.includes('an toàn') ? '🌿' : '❤️'}
                   </span>
-                </div>
-                <div className="border-r border-pink-100 my-1"></div>
-                <div className="text-center min-w-[70px]">
-                  <span className="text-text-secondary text-[10px] uppercase font-bold block">Dài Nhất</span>
-                  <span className="text-xl font-black text-text-primary">
-                    {menstrualStats.maxCycle ? `${menstrualStats.maxCycle} ngày` : '--'}
-                  </span>
-                </div>
+                  <span>{currentCycleStatus.title}</span>
+                </h4>
+                <p className="text-xs sm:text-sm font-semibold text-text-secondary leading-relaxed px-4">
+                  {currentCycleStatus.description}
+                </p>
+              </div>
+
+              {/* Cuối cùng: Dòng trạng thái chu kỳ hiện tại */}
+              <div className="pt-3 border-t border-pink-200/30 w-full max-w-xs flex justify-center">
+                <span className="text-xs font-black text-rose-500 bg-rose-500/10 border border-pink-200/30 px-5 py-1.5 rounded-full inline-block tracking-wide">
+                  {currentCycleDay ? `Ngày ${currentCycleDay} của chu kỳ` : 'Chưa có dữ liệu chu kỳ'}
+                </span>
               </div>
             </div>
 
@@ -1365,9 +1702,46 @@ export default function App() {
                   >
                     <ChevronLeft className="w-5 h-5 text-primary" />
                   </button>
-                  <h3 className="text-lg font-extrabold text-text-primary min-w-[140px] text-center capitalize">
-                    Tháng {calendarDate.getMonth() + 1} / {calendarDate.getFullYear()}
-                  </h3>
+                  <div className="flex items-center gap-1 mx-1">
+                    {/* Month select dropdown */}
+                    <select
+                      value={calendarDate.getMonth()}
+                      onChange={(e) => {
+                        const m = parseInt(e.target.value);
+                        const d = new Date(calendarDate);
+                        d.setMonth(m);
+                        setCalendarDate(d);
+                      }}
+                      className="bg-white border border-pink-200 text-text-primary rounded-xl px-2 py-1.5 text-xs font-black focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary cursor-pointer shadow-sm hover:bg-pink-50 transition-all font-sans"
+                    >
+                      {Array.from({ length: 12 }).map((_, i) => (
+                        <option key={i} value={i}>
+                          Tháng {String(i + 1).padStart(2, '0')}
+                        </option>
+                      ))}
+                    </select>
+
+                    {/* Year select dropdown */}
+                    <select
+                      value={calendarDate.getFullYear()}
+                      onChange={(e) => {
+                        const y = parseInt(e.target.value);
+                        const d = new Date(calendarDate);
+                        d.setFullYear(y);
+                        setCalendarDate(d);
+                      }}
+                      className="bg-white border border-pink-200 text-text-primary rounded-xl px-2 py-1.5 text-xs font-black focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary cursor-pointer shadow-sm hover:bg-pink-50 transition-all font-sans"
+                    >
+                      {Array.from({ length: 21 }).map((_, i) => {
+                        const yr = new Date().getFullYear() - 10 + i;
+                        return (
+                          <option key={yr} value={yr}>
+                            {yr}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
                   <button
                     onClick={() => {
                       const next = new Date(calendarDate);
@@ -1465,8 +1839,8 @@ export default function App() {
                       <span>Ngày an toàn 🌿</span>
                     </span>
                     <span className="flex items-center gap-1.5">
-                      <span className="w-3 h-3 rounded-full bg-slate-100 border border-slate-200 block"></span>
-                      <span>Ngày bình thường</span>
+                      <span className="w-3 h-3 rounded-full bg-yellow-400 border border-yellow-500 block shadow-[0_1px_4px_rgba(234,179,8,0.4)] animate-pulse"></span>
+                      <span>Ngày hiện tại ⭐</span>
                     </span>
                   </div>
                 </div>
@@ -1480,7 +1854,16 @@ export default function App() {
                     const startOffset = demoMonth.getDay();
 
                     return (
-                      <div key={mIdx} className="bg-white border border-pink-100/50 p-3 rounded-2xl shadow-sm text-text-primary">
+                      <div
+                        key={mIdx}
+                        onClick={() => {
+                          const year = calendarDate.getFullYear();
+                          const newD = new Date(year, mIdx, 1);
+                          setCalendarDate(newD);
+                          setCalendarMode('month');
+                        }}
+                        className="bg-white border border-pink-100/50 p-3 rounded-2xl shadow-sm text-text-primary hover:border-primary/50 transition-all cursor-pointer hover:shadow-md hover:scale-[1.02] transform duration-150"
+                      >
                         <h4 className="text-xs font-black text-primary tracking-wider mb-2 text-center capitalize">
                           Tháng {mIdx + 1}
                         </h4>
@@ -1504,7 +1887,7 @@ export default function App() {
                             let bgClass = 'bg-slate-50 text-text-secondary';
                             if (status === 'PERIOD') bgClass = 'bg-red-500 text-white';
                             if (status === 'UPCOMING') bgClass = 'bg-rose-100/90 text-rose-700';
-                            if (status === 'FERTILE') bgClass = 'bg-indigo-100 text-indigo-800';
+                            if (status === 'FERTILE') bgClass = 'bg-indigo-100 text-indigo-805';
                             if (status === 'OVULATION') bgClass = 'bg-purple-150 text-purple-800';
                             if (status === 'SAFE') bgClass = 'bg-emerald-100 text-emerald-800';
 
@@ -1536,6 +1919,25 @@ export default function App() {
                   </span>
                 </div>
 
+                {fertilityEvaluation && (
+                  <div className="bg-pink-50/40 p-4 border border-pink-100 rounded-2xl space-y-1.5 mb-4 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-text-secondary">Dự báo khả năng thụ thai:</span>
+                      <span className={`font-black uppercase tracking-wider ${fertilityEvaluation.color}`}>{fertilityEvaluation.level}</span>
+                    </div>
+                    <p className="text-text-secondary leading-relaxed font-semibold">{fertilityEvaluation.reason}</p>
+                    {fertilityEvaluation.confidenceText && (
+                      <p className="text-rose-600 font-bold block bg-rose-50 border border-rose-100 p-2 rounded-xl mt-1.5">{fertilityEvaluation.confidenceText}</p>
+                    )}
+                    {fertilityEvaluation.lhNotice && (
+                      <p className="text-indigo-600 font-semibold block bg-indigo-50 border border-indigo-150 p-2 rounded-xl mt-1.5">💡 {fertilityEvaluation.lhNotice}</p>
+                    )}
+                    {fertilityEvaluation.bbtNotice && (
+                      <p className="text-[#FFA2B6] font-semibold block bg-white border border-pink-100 p-2 rounded-xl mt-1.5">🌡️ {fertilityEvaluation.bbtNotice}</p>
+                    )}
+                  </div>
+                )}
+
                 {activeSelectedDayDetail.log ? (
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -1559,7 +1961,11 @@ export default function App() {
                       </div>
                       <div className="bg-white/85 p-2.5 rounded-xl border border-pink-150 shadow-sm">
                         <span className="text-[10px] text-text-secondary block font-bold">Chất nhầy cổ tử cung</span>
-                        <span className="text-sm font-extrabold text-text-primary">{activeSelectedDayDetail.log.cervicalMucus || 'N/A'}</span>
+                        <span className="text-sm font-extrabold text-text-primary">
+                          {activeSelectedDayDetail.log.cervicalMucus ? (
+                            cervicalMucusNames[activeSelectedDayDetail.log.cervicalMucus] || activeSelectedDayDetail.log.cervicalMucus
+                          ) : 'N/A'}
+                        </span>
                       </div>
                     </div>
 
@@ -1595,11 +2001,110 @@ export default function App() {
               </div>
             )}
 
+            {/* PREVIOUS RECORD LOGS LISTINGS */}
+            <div className="bg-surface/60 backdrop-blur-md rounded-3xl border border-pink-200/50 p-6 shadow-sm text-text-primary">
+              <div className="flex items-center justify-between mb-4 border-b border-pink-100 pb-3">
+                <h3 className="text-base font-extrabold text-text-primary flex items-center gap-2">
+                  <Calendar className="w-5 h-5 text-primary" />
+                  <span>Danh Sách Nhật Ký Chu Kỳ Đã Ghi Chép ({cycles.length})</span>
+                </h3>
+              </div>
+
+              {cycles.length === 0 ? (
+                <div className="text-center py-8 text-text-secondary italic text-xs font-medium">
+                  Chưa ghi chép bất kỳ chu kỳ nào. Hãy dùng nút "Ghi nhận Kinh nguyệt" để thêm mới.
+                </div>
+              ) : (
+                <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1">
+                  {[...cycles].sort((a, b) => b.startDate.localeCompare(a.startDate)).map((item, index) => (
+                    <div
+                      key={item.id || index}
+                      className="bg-white border border-pink-150 rounded-xl p-3.5 flex items-center justify-between gap-4 hover:border-primary/50 transition-all shadow-sm"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block animate-pulse"></span>
+                          <strong className="text-sm text-text-primary">Ngày bắt đầu: {CoupleUtils.formatDisplayDate(item.startDate)}</strong>
+                        </div>
+                        <div className="flex flex-wrap gap-2 text-[10px] text-text-secondary font-bold">
+                          <span className="bg-pink-50/50 px-2 py-0.5 rounded border border-pink-100">
+                            Chu kỳ: <strong className="text-primary-hover">{item.cycleLength} ngày</strong>
+                          </span>
+                          <span className="bg-pink-50/50 px-2 py-0.5 rounded border border-pink-100">
+                            Độ dài hành kinh: <strong className="text-[#FFA2B6]">{item.periodLength} ngày</strong>
+                          </span>
+                          {item.bbt && (
+                            <span className="bg-pink-50/50 px-2 py-0.5 rounded border border-pink-100">
+                              BBT: <strong className="text-purple-600">{item.bbt}°C</strong>
+                            </span>
+                          )}
+                          {item.lhTestResult && item.lhTestResult !== 'Không có' && (
+                            <span className="bg-pink-50/50 px-2 py-0.5 rounded border border-pink-100">
+                              Trứng: <strong className="text-indigo-600">{item.lhTestResult}</strong>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          onClick={() => openLogCycle(item)}
+                          className="p-1.5 bg-white hover:bg-pink-50/50 border border-pink-150 text-text-primary rounded-lg text-xs transition-colors cursor-pointer shadow-sm"
+                          title="Sửa bản ghi này"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => item.id && handleDeleteCycle(item.id)}
+                          className="p-1.5 bg-white hover:bg-red-50 text-danger border border-red-200 rounded-lg text-xs transition-colors cursor-pointer shadow-sm"
+                          title="Xóa bản ghi này"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* THỐNG KÊ KHOẢNG GIAI ĐOẠN CHU KỲ (CHU KỲ TRUNG BÌNH, NGẮN NHẤT VÀ DÀI NHẤT) */}
+            <div className="bg-surface/60 backdrop-blur-md rounded-3xl border border-pink-200/50 p-6 shadow-sm text-text-primary">
+              <div className="flex items-center gap-2 mb-4 border-b border-pink-100 pb-3">
+                <BarChart3 className="w-5 h-5 text-primary" />
+                <h3 className="text-base font-extrabold text-text-primary">Thống Kê Khoảng Giai Đoạn Chu Kỳ 📊</h3>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="bg-white/80 border border-pink-200/40 p-4 rounded-2xl text-center shadow-xs">
+                  <span className="text-text-secondary text-[10px] uppercase font-black tracking-wide block mb-1">Chu Kỳ Trung Bình</span>
+                  <span className="text-2xl font-black text-rose-500">{menstrualStats.averageCycle} ngày</span>
+                  <p className="text-[10px] text-text-secondary mt-1 font-semibold">Độ dài chu kỳ sinh lý trung bình tính theo các tháng trước</p>
+                </div>
+                <div className="bg-white/80 border border-pink-200/40 p-4 rounded-2xl text-center shadow-xs">
+                  <span className="text-text-secondary text-[10px] uppercase font-black tracking-wide block mb-1">Chu Kỳ Ngắn Nhất</span>
+                  <span className="text-2xl font-black text-emerald-600">
+                    {menstrualStats.minCycle ? `${menstrualStats.minCycle} ngày` : '--'}
+                  </span>
+                  <p className="text-[10px] text-text-secondary mt-1 font-semibold">Khoảng thời gian ngắn nhất giữa hai kỳ liên tiếp</p>
+                </div>
+                <div className="bg-white/80 border border-pink-200/40 p-4 rounded-2xl text-center shadow-xs">
+                  <span className="text-text-secondary text-[10px] uppercase font-black tracking-wide block mb-1">Chu Kỳ Dài Nhất</span>
+                  <span className="text-2xl font-black text-indigo-600">
+                    {menstrualStats.maxCycle ? `${menstrualStats.maxCycle} ngày` : '--'}
+                  </span>
+                  <p className="text-[10px] text-text-secondary mt-1 font-semibold">Khoảng thời gian dài nhất giữa hai kỳ liên tiếp</p>
+                </div>
+              </div>
+            </div>
+
             {/* DYNAMIC CYCLE PREDICTOR REPORT PANEL */}
             <div className="bg-surface/60 backdrop-blur-md rounded-3xl border border-pink-200/50 p-6 shadow-sm text-text-primary">
               <div className="flex items-center gap-2 mb-4 border-b border-pink-100 pb-3">
                 <TrendingUp className="w-5 h-5 text-primary" />
-                <h3 className="text-base font-extrabold text-text-primary">Kết Quả Tính Toán Theo 7 Bước Quy Chuẩn 📊</h3>
+                <h3 className="text-base font-extrabold text-text-primary flex items-center gap-2">
+                  <span>Kết Quả Tính Toán Theo 7 Bước Quy Chuẩn 📊</span>
+                </h3>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1811,73 +2316,6 @@ export default function App() {
                 <Shield className="w-3.5 h-3.5 shrink-0 text-primary" />
                 <span>Số liệu AI được bảo mật cục bộ và chỉ nhằm mục đích tham khảo, không thay thế cho chẩn đoán y tế chuyên khoa.</span>
               </div>
-            </div>
-
-            {/* PREVIOUS RECORD LOGS LISTINGS */}
-            <div className="bg-surface/60 backdrop-blur-md rounded-3xl border border-pink-200/50 p-6 shadow-sm text-text-primary">
-              <div className="flex items-center justify-between mb-4 border-b border-pink-100 pb-3">
-                <h3 className="text-base font-extrabold text-text-primary flex items-center gap-2">
-                  <Calendar className="w-5 h-5 text-primary" />
-                  <span>Danh Sách Nhật Ký Chu Kỳ Đã Ghi Chép ({cycles.length})</span>
-                </h3>
-              </div>
-
-              {cycles.length === 0 ? (
-                <div className="text-center py-8 text-text-secondary italic text-xs font-medium">
-                  Chưa ghi chép bất kỳ chu kỳ nào. Hãy dùng nút "Ghi nhận Kinh nguyệt" để thêm mới.
-                </div>
-              ) : (
-                <div className="space-y-2.5 max-h-[300px] overflow-y-auto pr-1">
-                  {[...cycles].sort((a, b) => b.startDate.localeCompare(a.startDate)).map((item, index) => (
-                    <div
-                      key={item.id || index}
-                      className="bg-white border border-pink-150 rounded-xl p-3.5 flex items-center justify-between gap-4 hover:border-primary/50 transition-all shadow-sm"
-                    >
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block animate-pulse"></span>
-                          <strong className="text-sm text-text-primary">Ngày bắt đầu: {CoupleUtils.formatDisplayDate(item.startDate)}</strong>
-                        </div>
-                        <div className="flex flex-wrap gap-2 text-[10px] text-text-secondary font-bold">
-                          <span className="bg-pink-50/50 px-2 py-0.5 rounded border border-pink-100">
-                            Chu kỳ: <strong className="text-primary-hover">{item.cycleLength} ngày</strong>
-                          </span>
-                          <span className="bg-pink-50/50 px-2 py-0.5 rounded border border-pink-100">
-                            Độ dài hành kinh: <strong className="text-[#FFA2B6]">{item.periodLength} ngày</strong>
-                          </span>
-                          {item.bbt && (
-                            <span className="bg-pink-50/50 px-2 py-0.5 rounded border border-pink-100">
-                              BBT: <strong className="text-purple-600">{item.bbt}°C</strong>
-                            </span>
-                          )}
-                          {item.lhTestResult && item.lhTestResult !== 'Không có' && (
-                            <span className="bg-pink-50/50 px-2 py-0.5 rounded border border-pink-100">
-                              Trứng: <strong className="text-indigo-600">{item.lhTestResult}</strong>
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          onClick={() => openLogCycle(item)}
-                          className="p-1.5 bg-white hover:bg-pink-50/50 border border-pink-150 text-text-primary rounded-lg text-xs transition-colors cursor-pointer shadow-sm"
-                          title="Sửa bản ghi này"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => item.id && handleDeleteCycle(item.id)}
-                          className="p-1.5 bg-white hover:bg-red-50 text-danger border border-red-200 rounded-lg text-xs transition-colors cursor-pointer shadow-sm"
-                          title="Xóa bản ghi này"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
 
           </div>
@@ -2481,38 +2919,157 @@ export default function App() {
             )}
 
             <div className="space-y-4 text-sm">
-              <div className="space-y-1">
-                <label className="text-xs text-slate-300 font-bold block uppercase tracking-wide">1. Ngày bắt đầu kỳ kinh (*)</label>
-                <input
-                  type="date"
-                  value={logStartDate}
-                  onChange={(e) => setLogStartDate(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-white focus:outline-none focus:border-rose-500 font-mono"
-                />
+              {/* Calendar Range Picker */}
+              <div className="space-y-2 bg-slate-950/60 p-4 border border-slate-800/80 rounded-2xl">
+                <div className="flex flex-col gap-2.5 pb-2.5 mb-2 border-b border-slate-800 w-full">
+                  <span className="text-xs font-black tracking-wider text-rose-500 uppercase block text-center">🩸 Chọn Khoảng Ngày Kinh</span>
+                  
+                  <div className="flex items-center gap-1.5 font-sans justify-between w-full">
+                    {!logId ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handlePrevMonth()}
+                          className="p-1 px-1.5 border border-slate-800 hover:bg-slate-805 bg-slate-900 rounded-lg text-slate-300 transition-colors cursor-pointer text-xs"
+                        >
+                          <ChevronLeft className="w-3.5 h-3.5" />
+                        </button>
+                        
+                        <div className="flex items-center gap-1.5 justify-center flex-1">
+                          {/* Month select dropdown */}
+                          <select
+                            value={pickerMonth.getMonth()}
+                            onChange={(e) => {
+                              const m = parseInt(e.target.value);
+                              const d = new Date(pickerMonth);
+                              d.setMonth(m);
+                              setPickerMonth(d);
+                            }}
+                            className="bg-slate-900 border border-slate-800 text-slate-200 rounded-lg px-2 py-1 text-[11px] font-bold focus:outline-none focus:border-rose-500 cursor-pointer shadow-sm hover:bg-slate-800 transition-all font-sans flex-1"
+                          >
+                            {Array.from({ length: 12 }).map((_, i) => (
+                              <option key={i} value={i}>
+                                Tháng {String(i + 1).padStart(2, '0')}
+                              </option>
+                            ))}
+                          </select>
+
+                          {/* Year select dropdown */}
+                          <select
+                            value={pickerMonth.getFullYear()}
+                            onChange={(e) => {
+                              const y = parseInt(e.target.value);
+                              const d = new Date(pickerMonth);
+                              d.setFullYear(y);
+                              setPickerMonth(d);
+                            }}
+                            className="bg-slate-900 border border-slate-800 text-slate-200 rounded-lg px-2 py-1 text-[11px] font-bold focus:outline-none focus:border-rose-500 cursor-pointer shadow-sm hover:bg-slate-800 transition-all font-sans flex-1"
+                          >
+                            {Array.from({ length: 11 }).map((_, i) => {
+                              const yr = new Date().getFullYear() - 5 + i;
+                              return (
+                                <option key={yr} value={yr}>
+                                  {yr}
+                                </option>
+                              );
+                            })}
+                          </select>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleNextMonth()}
+                          className="p-1 px-1.5 border border-slate-800 hover:bg-slate-805 bg-slate-900 rounded-lg text-slate-300 transition-colors cursor-pointer text-xs"
+                        >
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                      </>
+                    ) : (
+                      // Only show Month/Year text when editing. Delete arrows/dropdown completely as requested!
+                      <span className="text-[11px] font-extrabold text-rose-400 bg-rose-950/40 border border-rose-900/40 px-3 py-1.5 rounded-lg tracking-wider text-center w-full uppercase font-sans block">
+                        Tháng Ghi Nhận: Tháng {String(pickerMonth.getMonth() + 1).padStart(2, '0')} / {pickerMonth.getFullYear()}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-7 text-center text-slate-400 text-[10px] font-bold uppercase tracking-wider mb-1.5">
+                  <span>CN</span>
+                  <span>T2</span>
+                  <span>T3</span>
+                  <span>T4</span>
+                  <span>T5</span>
+                  <span>T6</span>
+                  <span>T7</span>
+                </div>
+
+                <div className="grid grid-cols-7 gap-1">
+                  {pickerMonthDays.map((cell, idx) => {
+                    const cellDate = cell.dateStr;
+                    const isSelectedRange = isDateInRange(cellDate);
+                    const isStart = isDateStart(cellDate);
+                    const isEnd = isDateEnd(cellDate);
+                    const isTodayStr = CoupleUtils.formatDate(new Date());
+                    const isToday = cellDate === isTodayStr;
+
+                    let cellClass = "";
+                    if (isStart || isEnd) {
+                      cellClass = "bg-rose-600 text-white font-black shadow-md shadow-rose-600/30 ring-1 ring-rose-400";
+                    } else if (isSelectedRange) {
+                      cellClass = "bg-rose-500/20 text-rose-200 font-extrabold border border-rose-500/10";
+                    } else if (isToday) {
+                      cellClass = "bg-slate-950 border border-cyan-400/50 text-cyan-400 font-bold hover:bg-slate-800";
+                    } else {
+                      cellClass = "bg-slate-950/40 border border-slate-800/80 text-slate-400 font-medium hover:bg-slate-800 hover:text-white";
+                    }
+
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => handlePickerDaySelect(cellDate)}
+                        className={`aspect-square rounded-xl flex flex-col items-center justify-center text-[11px] transition-all cursor-pointer ${cellClass} ${
+                          !cell.isCurrentMonth ? 'opacity-25' : 'opacity-100'
+                        }`}
+                      >
+                        <span>{cell.dayNum}</span>
+                        {isStart && <span className="text-[7px] mt-[-1px] leading-none shrink-0 text-white font-bold block">Start</span>}
+                        {isEnd && <span className="text-[7px] mt-[-1px] leading-none shrink-0 text-white font-bold block font-bold">End</span>}
+                        {!isStart && !isEnd && isSelectedRange && <span className="text-[7px] mt-[-1px] leading-none shrink-0 text-rose-300 font-bold block">🩸</span>}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs text-slate-300 font-bold block uppercase tracking-wide">2. Chu Kỳ (ngày)</label>
-                  <input
-                    type="number"
-                    min="21" max="40"
-                    value={logCycleLength}
-                    onChange={(e) => setLogCycleLength(parseInt(e.target.value) || 28)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white focus:outline-none focus:border-rose-500"
-                  />
-                  <span className="text-[10px] text-slate-500">Giới hạn: 21 - 40 ngày</span>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs text-slate-300 font-bold block uppercase tracking-wide">3. Số ngày hành kinh</label>
-                  <input
-                    type="number"
-                    min="2" max="10"
-                    value={logPeriodLength}
-                    onChange={(e) => setLogPeriodLength(parseInt(e.target.value) || 5)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2 text-white focus:outline-none focus:border-rose-500"
-                  />
-                  <span className="text-[10px] text-slate-500">Giới hạn: 2 - 10 ngày</span>
+              {/* Smart Summary Card */}
+              <div className="bg-slate-950/80 p-4 border border-slate-800/80 rounded-2xl space-y-3">
+                <span className="text-xs font-black tracking-wider text-slate-400 uppercase block">📊 Thông tin chu kỳ ghi nhận</span>
+                <div className="grid grid-cols-2 gap-3 text-slate-200">
+                  <div className="bg-slate-900 border border-slate-800 p-2.5 rounded-xl">
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Ngày đầu</span>
+                    <span className="text-xs font-extrabold text-white block truncate">
+                      {logStartDate ? CoupleUtils.formatDisplayDate(logStartDate) : "Chưa chọn"}
+                    </span>
+                  </div>
+                  <div className="bg-slate-900 border border-slate-800 p-2.5 rounded-xl">
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Ngày kết thúc</span>
+                    <span className="text-xs font-extrabold text-white block truncate">
+                      {logEndDate ? CoupleUtils.formatDisplayDate(logEndDate) : "Chọn ngày kết thúc"}
+                    </span>
+                  </div>
+                  <div className="bg-slate-900 border border-slate-800 p-2.5 rounded-xl">
+                    <span className="text-[10px] text-rose-400 font-bold uppercase tracking-wider block">Số ngày hành kinh</span>
+                    <span className="text-sm font-black text-rose-500 block">
+                      {logPeriodLength ? `${logPeriodLength} ngày` : "--"}
+                    </span>
+                  </div>
+                  <div className="bg-slate-900 border border-slate-800 p-2.5 rounded-xl">
+                    <span className="text-[10px] text-cyan-400 font-bold uppercase tracking-wider block">Chu kỳ</span>
+                    <span className="text-sm font-black text-cyan-500 block">
+                      {logCycleLength ? `${logCycleLength} ngày` : "--"}
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -2526,20 +3083,39 @@ export default function App() {
                   <label className="text-xs text-slate-400 block font-bold">Thử nghiệm rụng trứng LH:</label>
                   <select
                     value={logLhTest}
-                    onChange={(e) => setLogLhTest(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setLogLhTest(val);
+                      if (val === 'Peak' && !logLhPositiveDate) {
+                        setLogLhPositiveDate(logStartDate);
+                      }
+                    }}
                     className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-rose-505"
                   >
                     <option value="Không có">Không có dữ liệu</option>
-                    <option value="Dương tính (Đạt đỉnh)">Dương tính (Đạt đỉnh 🥚)</option>
-                    <option value="Âm tính">Âm tính</option>
+                    <option value="Low">Low (LH Thấp / Âm tính)</option>
+                    <option value="High">High (LH Cao)</option>
+                    <option value="Peak">Peak (LH Đạt đỉnh 🥚)</option>
                   </select>
                 </div>
+
+                {logLhTest === 'Peak' && (
+                  <div className="space-y-1 animate-fade-in text-rose-300">
+                    <label className="text-xs text-rose-400 block font-black">📅 Ngày thấy LH Đạt đỉnh (Peak):</label>
+                    <input
+                      type="date"
+                      value={logLhPositiveDate}
+                      onChange={(e) => setLogLhPositiveDate(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-rose-505 font-mono"
+                    />
+                  </div>
+                )}
 
                 <div className="space-y-1">
                   <label className="text-xs text-slate-400 block font-bold">Nhiệt độ cơ thể cơ sở (BBT °C):</label>
                   <input
                     type="text"
-                    placeholder="Ví dụ: 36.6"
+                    placeholder="Ví dụ: 36.6 (Bỏ trống nếu không có)"
                     value={logBbt}
                     onChange={(e) => setLogBbt(e.target.value)}
                     className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-rose-505"
@@ -2547,16 +3123,18 @@ export default function App() {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs text-slate-400 block font-bold">Trạng thái dịch tử cung:</label>
+                  <label className="text-xs text-slate-400 block font-bold">Trạng thái dịch nhầy cổ tử cung:</label>
                   <select
                     value={logMucus}
                     onChange={(e) => setLogMucus(e.target.value)}
                     className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-rose-505"
                   >
-                    <option value="Bình thường">Bình thường</option>
-                    <option value="Dai dính">Dai dính</option>
-                    <option value="Trắng đục dẻo">Trắng đục dẻo</option>
-                    <option value="Loãng ướt (Lòng trắng trứng)">Loãng ướt (Lòng trắng trứng ✨)</option>
+                    <option value="Bình thường">Bình thường (Bỏ qua cấu hình)</option>
+                    <option value="dry">Dry - Khô ráo (Khả năng thụ thai thấp)</option>
+                    <option value="sticky">Sticky - Dai dính (Thấp)</option>
+                    <option value="creamy">Creamy - Trắng đục dẻo (Bắt đầu tăng)</option>
+                    <option value="watery">Watery - Loãng ướt (Cao)</option>
+                    <option value="eggwhite">Eggwhite - Lòng trắng trứng dai trong (Rất cao ✨)</option>
                   </select>
                 </div>
               </div>

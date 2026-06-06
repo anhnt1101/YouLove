@@ -39,6 +39,41 @@ export const ScaledAvatar: React.FC<ScaledAvatarProps> = ({
     return () => observer.disconnect();
   }, []);
 
+  // Check if this is a pre-cropped image (no-transform fallback)
+  const isPreCropped = scale === 1.0 && offsetX === 0 && offsetY === 0;
+
+  useEffect(() => {
+    if (src) {
+      console.log("[Render Avatar Log]", {
+        imageWidth: src.startsWith("data:") ? "Base64Image" : "URL",
+        cropSize: containerWidth,
+        scale,
+        offsetX,
+        offsetY,
+        translateX: offsetX,
+        translateY: offsetY,
+        isPreCropped
+      });
+    }
+  }, [src, scale, offsetX, offsetY, containerWidth, isPreCropped]);
+
+  if (isPreCropped) {
+    return (
+      <div 
+        ref={containerRef}
+        onClick={onClick}
+        className={`relative overflow-hidden rounded-full flex items-center justify-center select-none ${className}`}
+      >
+        <img
+          src={src}
+          alt={alt}
+          className="w-full h-full object-cover pointer-events-none"
+          referrerPolicy="no-referrer"
+        />
+      </div>
+    );
+  }
+
   // The GestureImageEditor uses a clipping area of radius 120px, which is a diameter of 240px.
   // We scale down the 240px editor space to match the actual layout bounds of this container.
   const scaleFactor = containerWidth / 240;

@@ -17,6 +17,7 @@ export interface MenstrualCycle {
   cycleLength: number;
   periodLength: number;
   lhTestResult?: string | null;
+  lhPositiveDate?: string | null;
   bbt?: number | null;
   cervicalMucus?: string | null;
 }
@@ -80,10 +81,13 @@ export const MenstrualUtils = {
       };
     }
 
+    // Only use the 6 most recent cycles chronologically for calculating averages and statistics
+    const recentCycles = sorted.slice(-6);
+
     // STEP 1 - Calculate cycle lengths (distance between consecutive startDates)
     const cycleLengths: number[] = [];
-    for (let i = 1; i < sorted.length; i++) {
-      const len = daysBetween(sorted[i - 1].startDate, sorted[i].startDate);
+    for (let i = 1; i < recentCycles.length; i++) {
+      const len = daysBetween(recentCycles[i - 1].startDate, recentCycles[i].startDate);
       cycleLengths.push(len);
     }
 
@@ -96,7 +100,7 @@ export const MenstrualUtils = {
       const sum = cycleLengths.reduce((acc, val) => acc + val, 0);
       averageCycle = Math.round(sum / cycleLengths.length);
     } else {
-      const lastLength = sorted[sorted.length - 1].cycleLength;
+      const lastLength = recentCycles[recentCycles.length - 1].cycleLength;
       averageCycle = (lastLength >= 15 && lastLength <= 50) ? lastLength : 28;
     }
 
@@ -164,7 +168,15 @@ export const MenstrualUtils = {
         : addDays(periodStart, averageCycle);
 
       const periodEnd = addDays(periodStart, periodLength - 1);
-      const ovulationDate = addDays(nextPeriodStart, -14);
+      
+      // Default ovulation date: predicted next period - 14 days
+      let ovulationDate = addDays(nextPeriodStart, -14);
+      
+      // If there is an LH positive peak, prioritize: ovulationDate = lhPositiveDate + 1 day
+      if (curr.lhTestResult === 'Peak' && curr.lhPositiveDate) {
+        ovulationDate = addDays(curr.lhPositiveDate, 1);
+      }
+      
       const fertileStart = addDays(ovulationDate, -5);
       const fertileEnd = addDays(ovulationDate, 1);
 

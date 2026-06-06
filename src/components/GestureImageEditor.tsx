@@ -7,7 +7,7 @@ interface GestureImageEditorProps {
   initialScale?: number;
   initialOffsetX?: number;
   initialOffsetY?: number;
-  onSave: (scale: number, offsetX: number, offsetY: number) => void;
+  onSave: (scale: number, offsetX: number, offsetY: number, croppedImageUrl?: string) => void;
   onCancel: () => void;
   maleName?: string;
   femaleName?: string;
@@ -31,6 +31,7 @@ export const GestureImageEditor: React.FC<GestureImageEditorProps> = ({
 
   // References for tracking interactions
   const containerRef = useRef<HTMLDivElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
   
   // Single-touch/Mouse interaction tracking
   const isDragging = useRef<boolean>(false);
@@ -54,6 +55,22 @@ export const GestureImageEditor: React.FC<GestureImageEditorProps> = ({
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // Log real-time Preview values for avatar crop to meet tracking requirements
+  useEffect(() => {
+    if (type !== 'background' && imgRef.current) {
+      console.log("[Avatar Preview Log]", {
+        imageWidth: imgRef.current.naturalWidth,
+        imageHeight: imgRef.current.naturalHeight,
+        cropSize: 240,
+        scale: scale,
+        offsetX: offsetX,
+        offsetY: offsetY,
+        translateX: offsetX,
+        translateY: offsetY
+      });
+    }
+  }, [type, scale, offsetX, offsetY]);
 
   // Center coordinate of clipping areas
   const centerY = dimensions.height / 2;
@@ -208,6 +225,60 @@ export const GestureImageEditor: React.FC<GestureImageEditorProps> = ({
     setOffsetY(0);
   };
 
+  // Save with perfect canvas crop
+  const handleSaveClick = () => {
+    if (type !== 'background' && imgRef.current) {
+      const img = imgRef.current;
+      const W = img.offsetWidth;
+      const H = img.offsetHeight;
+
+      console.log("[Avatar Export Canvas Log]", {
+        imageWidth: img.naturalWidth,
+        imageHeight: img.naturalHeight,
+        cropSize: 240,
+        scale: scale,
+        offsetX: offsetX,
+        offsetY: offsetY,
+        translateX: offsetX,
+        translateY: offsetY
+      });
+
+      if (W > 0 && H > 0) {
+        try {
+          const resScale = 2; // For high physical crop density (retina standard 480x480 pixels for crispness)
+          const canvas = document.createElement('canvas');
+          canvas.width = 240 * resScale;
+          canvas.height = 240 * resScale;
+          const ctx = canvas.getContext('2d');
+          
+          if (ctx) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+
+            // Center of 240x240 canvas scaled by density
+            ctx.translate(120 * resScale, 120 * resScale);
+            // Translate by the drag offset
+            ctx.translate(offsetX * resScale, offsetY * resScale);
+            // Zoom / scale
+            ctx.scale(scale, scale);
+            // Draw img centered
+            ctx.drawImage(img, (-W / 2) * resScale, (-H / 2) * resScale, W * resScale, H * resScale);
+
+            const croppedImageUrl = canvas.toDataURL('image/jpeg', 0.95);
+            // Important: We set scale to 1.0 and offset to 0 because image is already cropped and centered!
+            onSave(1.0, 0, 0, croppedImageUrl);
+            return;
+          }
+        } catch (err) {
+          console.error("Failed to crop avatar image:", err);
+        }
+      }
+    }
+    // Fallback for background or if image loading hasn't parsed layout bounds
+    onSave(scale, offsetX, offsetY);
+  };
+
   return (
     <div className="fixed inset-0 z-[100] bg-slate-950 flex flex-col items-center justify-between overflow-hidden select-none">
       
@@ -239,7 +310,7 @@ export const GestureImageEditor: React.FC<GestureImageEditorProps> = ({
           </button>
 
           <button
-            onClick={() => onSave(scale, offsetX, offsetY)}
+            onClick={handleSaveClick}
             className="px-4 py-1.5 bg-gradient-to-r from-rose-500 to-pink-600 hover:from-rose-600 hover:to-pink-700 text-white text-xs font-black rounded-xl shadow-lg transition-all active:scale-95 flex items-center gap-1"
           >
             <Check className="w-3.5 h-3.5 stroke-[3px]" />
@@ -276,6 +347,7 @@ export const GestureImageEditor: React.FC<GestureImageEditorProps> = ({
             className="flex items-center justify-center pointer-events-none"
           >
             <img 
+              ref={imgRef}
               src={imageUrl} 
               alt="Source Workspace Workspace" 
               style={{
