@@ -17,6 +17,43 @@
         } catch (e) {
           console.warn('Ethereum collision guard failed:', e);
         }
+
+        // Catch and prevent browser extension crash logs from polluting console in sandbox iframes
+        window.addEventListener('error', function(event) {
+          const filename = event.filename || '';
+          const message = event.message || '';
+          if (
+            filename.indexOf('extension') !== -1 ||
+            filename.indexOf('contentscript') !== -1 ||
+            filename.indexOf('onboarding') !== -1 ||
+            message.indexOf('getImageNode') !== -1 ||
+            message.indexOf('ethereum') !== -1
+          ) {
+            event.stopImmediatePropagation();
+            event.preventDefault();
+            return true;
+          }
+        }, true);
+
+        window.addEventListener('unhandledrejection', function(event) {
+          const reason = event.reason;
+          if (reason) {
+            const message = reason.message || String(reason);
+            const stack = reason.stack || '';
+            if (
+              message.indexOf('getImageNode') !== -1 ||
+              message.indexOf('extension') !== -1 ||
+              message.indexOf('contentscript') !== -1 ||
+              message.indexOf('onboarding') !== -1 ||
+              stack.indexOf('onboarding') !== -1 ||
+              stack.indexOf('contentscript') !== -1
+            ) {
+              event.stopImmediatePropagation();
+              event.preventDefault();
+              return true;
+            }
+          }
+        }, true);
       })();
     </script>
     <meta charset="UTF-8" />

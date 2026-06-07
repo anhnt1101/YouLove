@@ -56,22 +56,6 @@ export const GestureImageEditor: React.FC<GestureImageEditorProps> = ({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Log real-time Preview values for avatar crop to meet tracking requirements
-  useEffect(() => {
-    if (type !== 'background' && imgRef.current) {
-      console.log("[Avatar Preview Log]", {
-        imageWidth: imgRef.current.naturalWidth,
-        imageHeight: imgRef.current.naturalHeight,
-        cropSize: 240,
-        scale: scale,
-        offsetX: offsetX,
-        offsetY: offsetY,
-        translateX: offsetX,
-        translateY: offsetY
-      });
-    }
-  }, [type, scale, offsetX, offsetY]);
-
   // Center coordinate of clipping areas
   const centerY = dimensions.height / 2;
   const centerX = dimensions.width / 2;
