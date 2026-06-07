@@ -227,6 +227,7 @@ export default function App() {
   // Gemini AI prediction integration state
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [aiSuccessMessage, setAiSuccessMessage] = useState<string | null>(null);
   const [aiProgressText, setAiProgressText] = useState('');
   const [aiResult, setAiResult] = useState<GeminiAnalysisResult | null>(() => {
     const saved = localStorage.getItem('youlove_ai_result');
@@ -856,6 +857,7 @@ export default function App() {
     }
     setIsAiLoading(true);
     setAiError(null);
+    setAiSuccessMessage(null);
     setAiProgressText("Đang tổng hợp các chu kỳ...");
 
     try {
@@ -875,6 +877,10 @@ export default function App() {
       if (coupleId) {
         updateRoom({ aiResult: result });
       }
+      setAiSuccessMessage("Phân tích dữ liệu chu kỳ bằng AI thành công! Toàn bộ chỉ số, dự báo ngày rụng trứng, khoảng thụ thai lý tưởng đã được tính toán lại.");
+      setTimeout(() => {
+        setAiSuccessMessage(null);
+      }, 7000);
     } catch (err: any) {
       console.error(err);
       setAiError(err.message || "Lỗi gọi AI phân tích chu kỳ.");
@@ -2206,12 +2212,23 @@ export default function App() {
 
               {/* Loader or Error indicator */}
               {aiError && (
-                <div className="bg-red-500/10 border border-red-200 rounded-2xl p-4 text-xs text-danger flex items-start gap-2 max-w-lg mx-auto relative z-10">
+                <div id="ai-error-banner" className="bg-red-500/10 border border-red-200 rounded-2xl p-4 text-xs text-danger flex items-start gap-2 max-w-lg mx-auto relative z-10">
                   <AlertCircle className="w-4 h-4 text-danger mt-0.5 shrink-0" />
                   <div>
                     <p className="font-bold">Lỗi trong quá trình phân tích:</p>
                     <p className="font-medium">{aiError}</p>
                     <p className="text-[10px] text-text-secondary mt-1.5">Mẹo: Đảm bảo đã nhập các ngày bắt đầu hợp lệ và khóa bí mật đã được cài đặt trong settings.</p>
+                  </div>
+                </div>
+              )}
+
+              {/* AI Success notification */}
+              {aiSuccessMessage && (
+                <div id="ai-success-banner" className="bg-emerald-500/10 border border-emerald-200 rounded-2xl p-4 text-xs text-emerald-700 flex items-start gap-2 max-w-lg mx-auto relative z-10 animate-fade-in">
+                  <Check className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-bold text-emerald-800">Phân tích thành công!</p>
+                    <p className="font-medium mt-0.5">{aiSuccessMessage}</p>
                   </div>
                 </div>
               )}
